@@ -13,7 +13,7 @@ async fn run() {
     let size = window.inner_size();
     let instance = wgpu::Instance::new(wgpu::Backends::all());
     let surface = unsafe { instance.create_surface(&window) };
-    let canvas = Canvas::new(surface, instance, size.width, size.height).await;
+    let mut canvas = Canvas::new(surface, instance, size.width, size.height).await;
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -30,8 +30,35 @@ async fn run() {
                 },
                 ..
             } => *control_flow = ControlFlow::Exit,
+
+            WindowEvent::Resized(physical_size) => {
+                canvas.resize(physical_size.width, physical_size.height);
+            }
+            WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                // new_inner_size is &&mut so we have to dereference it twice
+                canvas.resize(new_inner_size.width, new_inner_size.height);
+            }
+
             _ => {}
         },
+
+        Event::RedrawRequested(window_id) if window_id == window.id() => {
+            match canvas.render() {
+                Ok(_) => {}
+                // Reconfigure the surface if lost
+                Err(wgpu::SurfaceError::Lost) => canvas.reconfigure(),
+                // The system is out of memory, we should probably quit
+                Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                // All other errors (Outdated, Timeout) should be resolved by the next frame
+                Err(_) => {},
+            }
+        }
+
+        Event::MainEventsCleared => {
+            // RedrawRequested will only trigger once, unless we manually
+            // request it.
+            window.request_redraw();
+        }
         _ => {}
     });
 }
